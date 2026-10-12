@@ -1,0 +1,31 @@
+Feature,Coefficient
+Vehicle Model_Chevy Bolt,0.21326039987281603
+Day of Week_Sunday,-0.20664548867390906
+Day of Week_Thursday,0.18510960296524703
+Vehicle Model_Nissan Leaf,-0.14422775372375363
+Day of Week_Tuesday,0.13145383313860046
+Vehicle Model_BMW i3,-0.09239888620407577
+Temperature (°C),-0.07893563260547266
+User Type_Long-Distance Traveler,-0.057353780549755165
+State of Charge (Start %),-0.05525471421365854
+Day of Week_Monday,-0.05187662967630249
+Time of Day_Night,0.04749458097392136
+Day of Week_Saturday,-0.0470052929631653
+Distance Driven (since last charge) (km),0.02995883756819058
+User Type_Commuter,0.02903078353782028
+User Type_Casual Driver,0.028322997011934782
+Vehicle Model_Hyundai Kona,0.028012872829398537
+Time of Day_Evening,-0.027630837198051757
+Charger Type_Level 1,-0.026694402342697817
+Energy Consumed (kWh),0.023133734977133898
+Day of Week_Wednesday,-0.02218295542285164
+Time of Day_Afternoon,-0.016271631669511344
+Charger Type_Level 2,0.014986683497586998
+Vehicle Age (years),0.013920071994901152
+Charging Rate (kW),-0.013708349865365932
+Battery Capacity (kWh),-0.012093534583823434
+Charger Type_DC Fast Charger,0.011707718845110803
+Day of Week_Friday,0.011146930632381096
+State of Charge (End %),0.007998614998712442
+Vehicle Model_Tesla Model 3,-0.004646632774385317
+Time of Day_Morning,-0.0035921121063582436
