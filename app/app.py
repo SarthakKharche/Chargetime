@@ -239,11 +239,30 @@ def main():
             with st.spinner("Applying preprocessing pipeline & predicting duration..."):
                 res = predict_charging_duration(input_data, model=model, preprocessor=preprocessor)
 
-            # --- Physics-based prediction (primary, always correct) ---
+            # --- Physics-based prediction ---
             physics_hours = energy_consumed / charging_rate if charging_rate > 0 else 0.0
-            # Apply temperature efficiency factor: cold/hot weather slows charging slightly
-            temp_factor = 1.0 + max(0, (25 - temperature)) * 0.004  # ~0.4% slower per °C below 25
+
+            # Realistic temperature efficiency factor (Li-ion battery physics):
+            # - Optimal range: 20–30°C  → factor ≈ 1.00 (no penalty)
+            # - Cold (< 20°C)           → chemistry slows, up to ~40% longer at -20°C
+            # - Hot (> 35°C)            → thermal management throttles charger, ~1–2% per °C above 35
+            OPTIMAL_LOW, OPTIMAL_HIGH = 20.0, 35.0
+            if temperature < OPTIMAL_LOW:
+                # Cold penalty: 1.5% slower per °C below 20 (capped at 50% penalty)
+                cold_penalty = min((OPTIMAL_LOW - temperature) * 0.015, 0.50)
+                temp_factor = 1.0 + cold_penalty
+                temp_note = f"❄️ Cold weather penalty (+{cold_penalty*100:.1f}% longer)"
+            elif temperature > OPTIMAL_HIGH:
+                # Heat penalty: 1.2% slower per °C above 35 (thermal throttling)
+                heat_penalty = min((temperature - OPTIMAL_HIGH) * 0.012, 0.30)
+                temp_factor = 1.0 + heat_penalty
+                temp_note = f"🔥 Thermal throttling penalty (+{heat_penalty*100:.1f}% longer)"
+            else:
+                temp_factor = 1.0
+                temp_note = "✅ Optimal temperature range (no penalty)"
+
             physics_hours_adj = physics_hours * temp_factor
+            base_hours = physics_hours  # without temp
             ph = physics_hours_adj
             ph_h = int(ph)
             ph_m = int(round((ph - ph_h) * 60))
@@ -256,7 +275,8 @@ def main():
                 <div class="result-value">{physics_hours_adj:.2f} hours</div>
                 <div class="result-sub">≈ {ph_fmt}</div>
                 <p style="font-size:0.85rem; color:#166534; margin-top:8px;">
-                    <b>Formula:</b> {energy_consumed} kWh ÷ {charging_rate} kW × temperature factor ({temp_factor:.3f})
+                    <b>Base:</b> {energy_consumed} kWh ÷ {charging_rate} kW = {base_hours:.2f} hrs &nbsp;|&nbsp;
+                    <b>Temp factor:</b> ×{temp_factor:.3f} &nbsp;|&nbsp; {temp_note}
                 </p>
             </div>
             """, unsafe_allow_html=True)
