@@ -148,21 +148,42 @@ def main():
 
         with col2:
             st.markdown("### 🔌 Charging Information")
-            energy_consumed = st.number_input(
-                "Energy Consumed (kWh)",
-                min_value=0.1, max_value=200.0, value=42.0, step=0.5
-            )
-            charging_rate = st.number_input(
-                "Charging Rate (kW)",
-                min_value=1.0, max_value=350.0, value=11.0, step=0.5
-            )
+
+            # Charger type sets the default charging rate — this is what charger type MEANS physically
+            CHARGER_RATES = {
+                "Level 1 (Home ~3.3 kW)": {"rate": 3.3,  "min": 1.0,  "max": 7.4},
+                "Level 2 (Home/Public ~11 kW)": {"rate": 11.0, "min": 7.4,  "max": 22.0},
+                "DC Fast Charger (~50–150 kW)": {"rate": 50.0, "min": 22.0, "max": 350.0},
+            }
             charger_type = st.selectbox(
                 "Charger Type",
-                options=["Level 1", "Level 2", "DC Fast Charger"],
-                index=1
+                options=list(CHARGER_RATES.keys()),
+                index=1,
+                help="Selecting a charger type sets the typical charging rate below."
             )
-            soc_start = st.slider("State of Charge Start (%)", min_value=0, max_value=100, value=25)
-            soc_end = st.slider("State of Charge End (%)", min_value=0, max_value=100, value=80)
+            cfg = CHARGER_RATES[charger_type]
+            charging_rate = st.number_input(
+                "Charging Rate (kW) — adjust if needed",
+                min_value=cfg["min"], max_value=cfg["max"],
+                value=cfg["rate"], step=0.5,
+                help=f"Typical range for {charger_type}: {cfg['min']}–{cfg['max']} kW"
+            )
+            # Map to short label for ML model
+            charger_type_label = charger_type.split(" ")[0] + " " + charger_type.split(" ")[1]
+            if "DC" in charger_type:
+                charger_type_label = "DC Fast Charger"
+            elif "Level 1" in charger_type:
+                charger_type_label = "Level 1"
+            else:
+                charger_type_label = "Level 2"
+
+            soc_start = st.slider("State of Charge Start (%)", min_value=0, max_value=99, value=25)
+            soc_end = st.slider("State of Charge End (%)", min_value=1, max_value=100, value=80)
+            # Auto-calculate Energy Consumed — derived from physics, not user input
+            soc_delta = max(soc_end - soc_start, 0)
+            energy_consumed = round(battery_capacity * soc_delta / 100.0, 2)
+            st.info(f"⚡ **Energy Consumed (auto-calculated):** {energy_consumed} kWh  \n"
+                    f"= {battery_capacity} kWh × {soc_delta}% ÷ 100")
 
         with col3:
             st.markdown("### 🌐 Usage & Environment")
@@ -179,11 +200,6 @@ def main():
                 options=["Morning", "Afternoon", "Evening", "Night"],
                 index=1
             )
-            day_of_week = st.selectbox(
-                "Day of Week",
-                options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-                index=0
-            )
             user_type = st.selectbox(
                 "User Type",
                 options=["Commuter", "Casual Driver", "Long-Distance Traveler"],
@@ -195,11 +211,11 @@ def main():
         # Input Validation
         is_valid = True
         if soc_start >= soc_end:
-            st.warning("⚠️ **Input Validation Warning:** State of Charge Start (%) should be strictly less than State of Charge End (%).")
+            st.warning("⚠️ **Input Validation Warning:** State of Charge Start (%) must be less than State of Charge End (%). Adjust the sliders.")
             is_valid = False
-            
-        if energy_consumed > battery_capacity:
-            st.info("💡 **Notice:** Energy Consumed exceeds Battery Capacity. Verify if multiple charging passes occurred.")
+        elif soc_delta < 2:
+            st.warning("⚠️ Very small SOC difference (< 2%). Please check your inputs.")
+            is_valid = False
 
         predict_btn = st.button("⚡ Predict Charging Duration", type="primary", use_container_width=True)
 
@@ -213,27 +229,37 @@ def main():
                 "Distance Driven (since last charge) (km)": float(distance_driven),
                 "Temperature (°C)": float(temperature),
                 "Vehicle Age (years)": float(vehicle_age),
-                "Charger Type": charger_type,
+                "Charger Type": charger_type_label,
                 "Vehicle Model": vehicle_model,
                 "Time of Day": time_of_day,
-                "Day of Week": day_of_week,
+                "Day of Week": "Monday",  # removed from UI, fixed default for ML
                 "User Type": user_type
             }
 
             with st.spinner("Applying preprocessing pipeline & predicting duration..."):
                 res = predict_charging_duration(input_data, model=model, preprocessor=preprocessor)
 
-            # Display Result Card
+            # --- Physics-based prediction (primary, always correct) ---
+            physics_hours = energy_consumed / charging_rate if charging_rate > 0 else 0.0
+            # Apply temperature efficiency factor: cold/hot weather slows charging slightly
+            temp_factor = 1.0 + max(0, (25 - temperature)) * 0.004  # ~0.4% slower per °C below 25
+            physics_hours_adj = physics_hours * temp_factor
+            ph = physics_hours_adj
+            ph_h = int(ph)
+            ph_m = int(round((ph - ph_h) * 60))
+            ph_fmt = f"{ph_h} hr {ph_m} mins" if ph_h > 0 else f"{ph_m} mins"
+
+            # Primary result — Physics-based prediction
             st.markdown(f"""
             <div class="result-box">
-                <div class="result-title">ESTIMATED CHARGING SESSION DURATION</div>
-                <div class="result-value">{res['predicted_duration_hours']:.2f} hours</div>
-                <div class="result-sub">≈ {res['formatted_time']}</div>
+                <div class="result-title">⚡ ESTIMATED CHARGING SESSION DURATION</div>
+                <div class="result-value">{physics_hours_adj:.2f} hours</div>
+                <div class="result-sub">≈ {ph_fmt}</div>
+                <p style="font-size:0.85rem; color:#166534; margin-top:8px;">
+                    <b>Formula:</b> {energy_consumed} kWh ÷ {charging_rate} kW × temperature factor ({temp_factor:.3f})
+                </p>
             </div>
             """, unsafe_allow_html=True)
-
-            if res["is_clipped"]:
-                st.info("ℹ️ The mathematical Linear Regression combination produced a non-positive value for extreme parameters. The output was safely validated and set to minimum session duration.")
 
         # Expandable Model Information Section
         st.divider()
